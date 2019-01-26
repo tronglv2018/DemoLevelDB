@@ -11,35 +11,57 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MySqlMain {
+	
+	
+	public static long currentNumber = 960000000;
+	public static final long minNumber = 960000000;
+	public static final long maxNumber = 999999999;
+	public static final int batchSize = 100000;//batch = 100.000
+	public static final int qtyIsdnSearch = 200000;// = 200.000
+	
+	public static final int qtyThreads= 4;
+	public static final int queueSize= 10;
+	
+	private static final String MYSQL_DB_URL = "jdbc:mysql://localhost:3306/mydb";
+	private static final String MYSQL_USER_NAME = "root";
+	private static final String MYSQL_PASSWORD = "123456a@";
+	public static final String MYSQL_INSERT_STRING = "insert into subscriber (isdn, productid, create_username, status) values (?, ?, ?, ?)";
+	public static final String MYSQL_SELECT_STRING = "select status from subscriber where isdn = ?  ";
+	public static final String MYSQL_PROCUCT_CODE_LIST = "('code5','code10','code15')";
+
+
 
 	public static void main(String[] args) {
+		Date d ;
+		long startTime ;
+		long endTime ;
+		
 		// 1. Truncate Table
 		truncateDb();
 
 		// 2. Insert Data
-		Date d = new Date();
-		System.out
-				.println("Start threads to insert data. " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds());
-
-		long startTime = System.currentTimeMillis();
-//		ExecutorService executor = Executors.newFixedThreadPool(20);
-//		for (int i = 1; i <= 12; i++) {
+//		d = new Date();
+//		System.out.println("Starting threads to insert data. At " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds());
+//
+//		startTime = System.currentTimeMillis();
+//		ExecutorService executor = Executors.newFixedThreadPool(Utils.queueSize);
+//		for (int i = 1; i <= Utils.qtyThreads; i++) {
 //			Runnable worker = new MySqlThread("Job_" + i);
 //			executor.execute(worker);
 //		}
 //		executor.shutdown();
 //		while (!executor.isTerminated()) {
 //		}
-		long endTime = System.currentTimeMillis();
-		System.out.println("Finished all threads. Total insert time = " + (endTime - startTime) / 1000 + " s");
+//		endTime = System.currentTimeMillis();
+//		System.out.println("\n\n\nFinished all threads. Total insert time = " + (endTime - startTime) / 1000 + " s");
 
-		// 3. Find Data
+		// 3. Query Data
 		d = new Date();
-		System.out.println("Find data. " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds());
+		System.out.println("\n\n\nStarting Query data. At " + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds());
 		startTime = System.currentTimeMillis();
-		findDb();
+		queryDb();
 		endTime = System.currentTimeMillis();
-		System.out.println("Finished. Total find data time = " + (endTime - startTime) / 1000 + " s");
+		System.out.println("Finished. Total Query data time = " + (endTime - startTime) / 1000 + " s");
 
 	}
 
@@ -47,7 +69,7 @@ public class MySqlMain {
 		Connection conn = null;
 		Statement statement = null;
 		try {
-			conn = Utils.getConnMySql();
+			conn = getConnMySql();
 			if (conn == null)
 				return;
 			statement = conn.createStatement();
@@ -69,32 +91,43 @@ public class MySqlMain {
 		}
 	}
 
-	static void findDb() {
-		// Tao mang 100.000 so de test tong thoi gian select
-		Long[] isdnList = new Long[Utils.qtyIsdnSearch];
-		Integer[] statusList = new Integer[Utils.qtyIsdnSearch];
-		for (int i = 0; i < Utils.qtyIsdnSearch; i++) {
-			isdnList[i] = Utils.randomIsdn();
+	static void queryDb() {
+		// Tao mang 200.000 so de test tong thoi gian select
+		Long[] isdnList = new Long[qtyIsdnSearch];
+		String[] productList = new String[qtyIsdnSearch];
+		for (int i = 0; i < qtyIsdnSearch; i++) {
+			isdnList[i] = Utils.randomWithRange(minNumber, maxNumber);
 		}
 
 		Connection conn = null;
 		Statement stmt = null;
 //		PreparedStatement ps = null;
+		
 		try {
-			conn = Utils.getConnMySql();
+			conn = getConnMySql();
 			if (conn == null)
 				return;
-			for (int i = 0; i < Utils.qtyIsdnSearch; i++) {
+			
+			int qtyExistNumber = 0; 
+			for (int i = 0; i < qtyIsdnSearch; i++) {
 				// add batch
 				// ps = conn.prepareStatement(Utils.MYSQL_SELECT_STRING);
-				// ps.setLong(1, subsList[i][0]);
+				// ps.setLong(1, isdnList[i]);
 
 				stmt = conn.createStatement();
-				ResultSet rs = stmt.executeQuery(Utils.MYSQL_SELECT_STRING);
+				ResultSet rs = stmt.executeQuery(
+						"select b.code from mydb.subscriber a join mydb.product b on a.productid = b.id where a.isdn = "
+								+ isdnList[i] + " and a.status= 2  and b.code in " + MYSQL_PROCUCT_CODE_LIST);
 				while (rs.next()) {
-					statusList[i] = rs.getInt(1);
+					qtyExistNumber++;
+					productList[i] = rs.getString(1);
 					break;
 				}
+
+				if (i>0 && i % 5000 == 0) {
+					System.out.println("Da query " + i + " number. Co " + qtyExistNumber + " number thoa man dk status = 2 and product in (code5,code10,code15) ");
+				}
+				
 			}
 
 			stmt.close();
@@ -112,5 +145,28 @@ public class MySqlMain {
 			}
 		}
 	}
+	
+	public static synchronized long getIncreaseNumber() {
+		return currentNumber++;
+	}
+
+	public static synchronized boolean isDone() {
+		return (currentNumber > maxNumber);
+	}
+	
+	public static Connection getConnMySql() {
+		return getConnMySql(MYSQL_DB_URL, MYSQL_USER_NAME, MYSQL_PASSWORD);
+	}
+
+	public static Connection getConnMySql(String dbURL, String userName, String password) {
+		try {
+			return DriverManager.getConnection(dbURL, userName, password);
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return null;
+		}
+	}
+
+
 
 }

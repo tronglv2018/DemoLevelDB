@@ -31,23 +31,24 @@ public class MySqlThread implements Runnable {
 		long start = 0;
 
 		try {
-			conn = Utils.getConnMySql();
-			ps = conn.prepareStatement(Utils.MYSQL_INSERT_STRING);
+			conn = MySqlMain.getConnMySql();
+			conn.setAutoCommit(false);
+			ps = conn.prepareStatement(MySqlMain.MYSQL_INSERT_STRING);
 			start = System.currentTimeMillis();
 			println("------------------------------Start Thread------------------------------");
 			long count = 0;
-			while (!Utils.isDone()) {
-				long num = Utils.getCurrentNumber();
+			while (!MySqlMain.isDone()) {
+				long num = MySqlMain.getIncreaseNumber();
 				ps.setLong(1, num);
-				ps.setInt(2, Utils.randomWithRange(0, 3));// 0: init; 1: new; 2: active; 3: terminal
+				ps.setLong(2, Utils.randomWithRange(1, 20));//productid in 1-20
 				ps.setString(3, Thread.currentThread().getName() + " : " + this.name);
+				ps.setLong(4, Utils.randomWithRange(1, 3));//status in 0-3
 				ps.addBatch();
 
-				if (++count % Utils.batchSize == 0) {
+				if (++count % MySqlMain.batchSize == 0) {
 					int[] result = ps.executeBatch();
 					conn.commit();
-					println("Commit Batch no: " + count + ". Time taken: " + (System.currentTimeMillis() - start) / 1000
-							+ " s. Current number: " + num);
+					println("Commit Batch. Qty number of thread: " + count + ". Time taken: " + (System.currentTimeMillis() - start) / 1000 + " s. Current number: " + num);
 				}
 			}
 			int[] result = ps.executeBatch();
@@ -72,7 +73,6 @@ public class MySqlThread implements Runnable {
 
 	void println(String s) {
 		Date d = new Date();
-		System.out.println("[" + Thread.currentThread().getName() + "].[" + this.name + "].[" + d.getHours() + ":"
-				+ d.getMinutes() + ":" + d.getSeconds() + "].[" + s + "]");
+		System.out.println("[" + Thread.currentThread().getName() + "].[" + this.name + "].[" + d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds() + "].[" + s + "]");
 	}
 }
